@@ -38,7 +38,7 @@ const generateCert = (options: TPluginOptions, ipAddresses: string[]) => {
     dataEncipherment: false,
   }, {
     name: 'subjectAltName',
-    altNames: ipAddresses.map(address => ({type: 7, ip: address})),
+    altNames: [{type: 2, value: 'localhost'}, ...ipAddresses.map(address => ({type: 7, ip: address}))],
   }, {
     name: 'authorityKeyIdentifier',
     keyIdentifier: true,

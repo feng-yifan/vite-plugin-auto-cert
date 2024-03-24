@@ -1,6 +1,6 @@
 {
   "name"           : "vite-plugin-auto-cert",
-  "version"        : "0.0.6",
+  "version"        : "1.0.0",
   "description"    : "Generate certificate from trusted ca and start vite dev server with https enabled",
   "keywords"       : [
     "vite",
