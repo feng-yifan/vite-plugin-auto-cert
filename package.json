@@ -1,0 +1,48 @@
+{
+  "name"           : "vite-plugin-auto-cert",
+  "version"        : "0.0.6",
+  "description"    : "Generate certificate from trusted ca and start vite dev server with https enabled",
+  "keywords"       : [
+    "vite",
+    "vite plugin",
+    "dev-server",
+    "https",
+    "cert",
+    "teamwork"
+  ],
+  "homepage"       : "https://github.com/feng-yifan/vite-plugin-auto-cert",
+  "bugs"           : {
+    "url": "https://github.com/feng-yifan/vite-plugin-auto-cert/issues"
+  },
+  "license"        : "MIT",
+  "author"         : "riSky",
+  "files"          : [
+    "dist",
+    "src"
+  ],
+  "main"           : "dist/index.js",
+  "module"         : "dist/index.mjs",
+  "exports"        : {
+    "import" : "./dist/index.mjs",
+    "require": {
+      "types"  : "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "repository"     : {
+    "type": "git",
+    "url" : "https://github.com/feng-yifan/vite-plugin-auto-cert.git"
+  },
+  "scripts"        : {
+    "build": "tsup src --format cjs --format esm --dts --no-splitting --sourcemap --clean"
+  },
+  "dependencies"   : {
+    "node-forge": "^1.3.1"
+  },
+  "devDependencies": {
+    "@types/node-forge": "^1.3.11",
+    "tsup"             : "^8.0.2",
+    "typescript"       : "^5.4.3",
+    "vite"             : "^5.2.5"
+  }
+}
