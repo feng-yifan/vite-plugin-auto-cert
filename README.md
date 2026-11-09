@@ -60,6 +60,26 @@ export default defineConfig({
 autoCert({ configFile: "config/auto-cert.yaml" });
 ```
 
+## 中间 CA / 多级中间链
+
+`ca.cert`（或 `ca.certFile` 指向的文件）可以放入**完整中间 CA 证书链**：既包含真正签发叶子证书的中间 CA，也包含它的各级上级中间 CA。根证书可含、也可缺；自签名根会被自动排除，不会下发给客户端（客户端本就信任根）。
+
+- **证书顺序不限**：插件用 `ca.key` 的公钥匹配定位实际签发 CA，再按 `issuer → subject` 自动把上级中间证书串成链。
+- **中间证书会一并下发**：`server.https.cert` 为「叶子证书 + 完整中间链」，客户端只需信任根证书即可建立完整信任链，不再提示「不是专用连接」。
+- **会提示链顶端与需信任的上级**：`ca.cert` 未包含根证书时（正常情况，根从不下发），插件输出一条 info，说明已下发几张中间证书、链顶端是哪个中间 CA、以及客户端需信任它的哪个上级 CA；若该上级仍是中间 CA，请把它的证书也补进 `ca.cert` / `certFile`。
+- 若签发 CA 就是自签名根（根直签），行为与之前一致，仅下发叶子证书。
+
+例如三级（甚至更多级）场景：
+
+```text
+根（客户端信任，可不下发）
+  └── Local DEV CA（中间 CA）
+        └── Local DEV FengYifan CA（中间 CA，实际签发者）
+              └── leaf（插件生成）
+```
+
+把 `Local DEV FengYifan CA` 与 `Local DEV CA` 的证书 PEM 一并写进 `ca.cert`（顺序任意），`ca.key` 使用 `Local DEV FengYifan CA` 的私钥，插件就会下发「leaf + Local DEV FengYifan CA + Local DEV CA」，根证书不下发。
+
 ## 在 monorepo 中使用
 
 插件在 Vite 的 `root`（未设置时回退到 `process.cwd()`）下查找 `auto-cert.config.yaml`。因此：

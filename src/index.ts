@@ -45,10 +45,67 @@ const generateSerialNumber = (): string => {
   return parseInt(hex.slice(0, 2), 16) >= 0x80 ? `00${hex}` : hex;
 };
 
+/**
+ * 从 PEM 文本中按出现顺序抽取全部证书块。
+ */
+const splitPemCertificates = (pem: string): string[] => {
+  const matches = pem.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g);
+  return matches ? matches.map((block) => block.trim()) : [];
+};
+
+/**
+ * 判断证书是否自签名：用证书自身公钥验证自身签名。
+ */
+const isSelfSignedCertificate = (cert: forge.pki.Certificate): boolean => {
+  try {
+    return cert.verify(cert);
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * 判断证书公钥是否与给定私钥配对：比较 RSA 模数 n 的十六进制串。
+ */
+const publicKeyMatches = (cert: forge.pki.Certificate, privateKey: forge.pki.rsa.PrivateKey): boolean => {
+  const certPublicKey = cert.publicKey as forge.pki.rsa.PublicKey;
+  if (!certPublicKey || !certPublicKey.n || !privateKey || !privateKey.n) {
+    return false;
+  }
+  return certPublicKey.n.toString(16).toLowerCase() === privateKey.n.toString(16).toLowerCase();
+};
+
+const getCommonName = (attributes: forge.pki.CertificateField[]): string => {
+  const commonName = attributes.find((attribute) => attribute.name === 'commonName' || attribute.shortName === 'CN');
+  return typeof commonName?.value === 'string' ? commonName.value : '';
+};
+
+/**
+ * 比较两组证书名称属性是否等价（忽略属性顺序）。
+ */
+const attributesEqual = (a: forge.pki.CertificateField[], b: forge.pki.CertificateField[]): boolean => {
+  const canonical = (attributes: forge.pki.CertificateField[]): string => attributes
+    .map((attribute) => `${attribute.name ?? attribute.shortName ?? ''}=${String(attribute.value ?? '')}`)
+    .sort()
+    .join('|');
+  return canonical(a) === canonical(b);
+};
+
 const generateCert = (ca: TCertificateAuthority, ipAddresses: string[]) => {
   const pki = forge.pki;
-  const caCert = pki.certificateFromPem(ca.cert);
+  const blocks = splitPemCertificates(ca.cert);
+  if (blocks.length === 0) {
+    throw new Error('[auto-cert] ca.cert / ca.certFile 中未找到任何 CERTIFICATE 证书块，请确认内容为 PEM 格式');
+  }
+
   const caKey = pki.privateKeyFromPem(ca.key);
+  const certs = blocks.map((block) => pki.certificateFromPem(block));
+  // 以公钥匹配定位真正负责签发的 CA，cert 内证书顺序不限。
+  const signingCa = certs.find((cert) => publicKeyMatches(cert, caKey));
+  if (!signingCa) {
+    throw new Error('[auto-cert] 证书链中找不到与私钥匹配的 CA 证书，请确认 ca.key 与 ca.cert 中的某张证书配对');
+  }
+
   const tlsKeyPair = pki.rsa.generateKeyPair(2048);
   const tlsCert = pki.createCertificate();
   tlsCert.publicKey = tlsKeyPair.publicKey;
@@ -57,7 +114,7 @@ const generateCert = (ca: TCertificateAuthority, ipAddresses: string[]) => {
   tlsCert.validity.notAfter = new Date();
   tlsCert.validity.notAfter.setFullYear(tlsCert.validity.notAfter.getFullYear() + 1);
   tlsCert.setSubject([{name: 'commonName', value: 'vite dev cert'}]);
-  tlsCert.setIssuer(caCert.subject.attributes);
+  tlsCert.setIssuer(signingCa.subject.attributes);
   tlsCert.setExtensions([{
     name: 'basicConstraints',
     cA: false,
@@ -74,11 +131,55 @@ const generateCert = (ca: TCertificateAuthority, ipAddresses: string[]) => {
   }, {
     name: 'subjectKeyIdentifier',
   }]);
+  // 每次签名都新建 digest 对象，避免复用同一个 MessageDigest 导致签名错误。
   tlsCert.sign(caKey, forge.md.sha256.create());
+
+  // 构建中间证书链：从签发 CA 向上按 issuer -> subject 串联，直到自签名根（根不下发）。
+  const chain: forge.pki.Certificate[] = [];
+  const usedPems = new Set<string>();
+  let current: forge.pki.Certificate = signingCa;
+  let reachedRoot = false;
+  let rootCn = '';
+  if (isSelfSignedCertificate(signingCa)) {
+    // 根直签：签发 CA 本身就是自签名根，无中间证书。
+    reachedRoot = true;
+    rootCn = getCommonName(signingCa.subject.attributes);
+  } else {
+    chain.push(signingCa);
+    usedPems.add(pki.certificateToPem(signingCa));
+  }
+  while (!reachedRoot) {
+    const next = certs.find((candidate) => {
+      if (usedPems.has(pki.certificateToPem(candidate))) {
+        return false;
+      }
+      return attributesEqual(candidate.subject.attributes, current.issuer.attributes);
+    });
+    if (!next) {
+      // 链不完整：找不到 current 的上级证书。
+      break;
+    }
+    if (isSelfSignedCertificate(next)) {
+      // 到达自签名根：根不下发，链到此为止。
+      reachedRoot = true;
+      rootCn = getCommonName(next.subject.attributes);
+      break;
+    }
+    chain.push(next);
+    usedPems.add(pki.certificateToPem(next));
+    current = next;
+  }
+
+  const chainPem = chain.map((cert) => pki.certificateToPem(cert));
+  const servedCert = [pki.certificateToPem(tlsCert), ...chainPem].join('\n');
   return {
-    cert: pki.certificateToPem(tlsCert),
+    cert: servedCert,
     publicKey: pki.publicKeyToPem(tlsKeyPair.publicKey),
     privateKey: pki.privateKeyToPem(tlsKeyPair.privateKey),
+    intermediateCount: chain.length,
+    reachedRoot,
+    topCn: reachedRoot ? rootCn : getCommonName(current.subject.attributes),
+    missingIssuerCn: reachedRoot ? undefined : getCommonName(current.issuer.attributes),
   };
 };
 
@@ -179,6 +280,17 @@ const autoCert = (options: TPluginOptions = {}): Plugin => {
       }
 
       const tls = generateCert(ca, getLocalIPv4Addresses());
+      if (tls.intermediateCount > 0) {
+        if (tls.reachedRoot) {
+          announceOnce(`[auto-cert] 签发 CA 为中间 CA，已下发 ${tls.intermediateCount} 张中间证书，证书链已完整追溯至根 CA「${tls.topCn}」`);
+        } else {
+          // 未包含根证书是正常情况：根不下发、由客户端信任，不判为“链不完整”。
+          // 这里只提示链顶端 CA 及其需被信任的上级，便于用户判断是否还缺中间证书。
+          announceOnce(`[auto-cert] 签发 CA 为中间 CA，已下发 ${tls.intermediateCount} 张中间证书；证书链顶端为中间 CA「${tls.topCn}」，其上级为「${tls.missingIssuerCn}」。若客户端只信任根证书，请确保从「${tls.topCn}」到根的各级中间 CA 证书都已放入 ca.cert / certFile（若「${tls.missingIssuerCn}」即根，则当前链已足够）`);
+        }
+      } else {
+        announceOnce('[auto-cert] 签发 CA 为自签名根 CA，已直接签发叶子证书');
+      }
       return {
         server: {
           https: {cert: tls.cert, key: tls.privateKey},

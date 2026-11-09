@@ -8,9 +8,15 @@ enabled: true
 
 ca:
   # 方式一：内联 PEM（cert 与 key 都要提供）
+  #
+  # 中间 CA / 多级中间链：cert 中可依次粘贴多张证书 PEM，放入「实际签发叶子证书的中间 CA
+  # + 各级上级中间 CA」的完整链。证书顺序不限（插件按 key 匹配签发 CA、按 issuer→subject
+  # 自动串链）；根证书可含可缺，自签名根会被自动排除、不下发。例如：
+  #   根（可不下发）→ Local DEV CA → Local DEV FengYifan CA（实际签发者）→ 叶子
+  # 若未包含根证书（正常情况），插件会提示链顶端 CA 及客户端需信任的上级 CA。
   cert: |
     -----BEGIN CERTIFICATE-----
-    ... 在此粘贴你的 CA 证书 PEM（占位内容，请替换）...
+    ... 在此粘贴你的 CA 证书 PEM（占位内容，请替换；多级中间链可粘贴多张）...
     -----END CERTIFICATE-----
   key: |
     -----BEGIN PRIVATE KEY-----
@@ -19,5 +25,6 @@ ca:
 
   # 方式二：使用文件路径（相对本配置文件所在目录解析）
   # 使用该方式时，删除上面的内联 cert / key 并取消下面两行注释：
+  # certFile 指向的文件同样可包含多张 PEM：实际签发 CA + 各级上级中间 CA（根可含可缺）。
   # certFile: ./certs/ca.crt
   # keyFile: ./certs/ca.key
