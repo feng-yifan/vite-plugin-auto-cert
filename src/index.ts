@@ -5,13 +5,9 @@ import path from "path";
 import { parse as parseYaml } from "yaml";
 import { Plugin } from 'vite';
 
-export type TCertificateAuthority = { cert: string, key: string };
+type TCertificateAuthority = { cert: string, key: string };
 
 export type TPluginOptions = {
-  /**
-   * 显式内联的 CA 证书与私钥，优先级最高（保留 1.0.x 的用法）。
-   */
-  ca?: TCertificateAuthority,
   /**
    * 配置文件名或路径，相对 vite root 解析。
    * 默认在项目根查找 auto-cert.config.yaml，找不到再试 auto-cert.config.yml。
@@ -148,6 +144,10 @@ const autoCert = (options: TPluginOptions = {}): Plugin => {
     name: 'auto-cert',
     apply: 'serve',
     config: (userConfig) => {
+      if ((options as any).ca !== undefined) {
+        throw new Error('[auto-cert] 自 2.0.0 起不再支持 autoCert({ ca }) 内联 CA，请在项目根使用 auto-cert.config.yaml 提供 CA（详见 README）');
+      }
+
       const root = userConfig.root ? path.resolve(process.cwd(), userConfig.root) : process.cwd();
       const configFilePath = resolveConfigFilePath(root, options.configFile);
 
@@ -164,12 +164,10 @@ const autoCert = (options: TPluginOptions = {}): Plugin => {
         }
       }
 
-      // 优先级：显式 autoCert({ ca }) > 配置文件 > no-op
-      const ca = options.ca ?? (
-        configFilePath && configFile && configFile.enabled !== false
-          ? loadCaFromConfigFile(configFilePath, configFile)
-          : undefined
-      );
+      // CA 只能来自项目配置文件；没有可用的配置文件即 no-op。
+      const ca = configFilePath && configFile && configFile.enabled !== false
+        ? loadCaFromConfigFile(configFilePath, configFile)
+        : undefined;
 
       if (!ca) {
         if (!configFilePath) {

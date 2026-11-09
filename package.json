@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-auto-cert",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "description": "Generate certificate from trusted ca and start vite dev server with https enabled",
   "keywords": [
     "vite",
@@ -19,7 +19,8 @@
   "files": [
     "dist",
     "src",
-    "auto-cert.config.example.yaml"
+    "auto-cert.config.example.yaml",
+    "README.en.md"
   ],
   "main": "dist/index.js",
   "module": "dist/index.mjs",
