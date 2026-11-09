@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
     "target"          : "es2016",
-    "module"          : "CommonJS",
+    "module"          : "ESNext",
     "outDir"          : "dist",
-    "moduleResolution": "Node",
+    "moduleResolution": "Bundler",
     "esModuleInterop" : true,
     "strict"          : true,
     "declaration"     : true

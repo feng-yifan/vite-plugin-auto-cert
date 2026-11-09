@@ -1,0 +1,23 @@
+# vite-plugin-auto-cert 配置文件示例
+#
+# 复制本文件为项目根目录下的 auto-cert.config.yaml（或 auto-cert.config.yml）后按需修改。
+# 该文件（以及引用的证书目录）通常包含 CA 私钥，请勿提交到版本库！
+#
+# enabled 为可选，默认 true；显式设为 false 时插件按 no-op 处理（不设置 https，也不报错）。
+enabled: true
+
+ca:
+  # 方式一：内联 PEM（cert 与 key 都要提供）
+  cert: |
+    -----BEGIN CERTIFICATE-----
+    ... 在此粘贴你的 CA 证书 PEM（占位内容，请替换）...
+    -----END CERTIFICATE-----
+  key: |
+    -----BEGIN PRIVATE KEY-----
+    ... 在此粘贴你的 CA 私钥 PEM（占位内容，请替换）...
+    -----END PRIVATE KEY-----
+
+  # 方式二：使用文件路径（相对本配置文件所在目录解析）
+  # 使用该方式时，删除上面的内联 cert / key 并取消下面两行注释：
+  # certFile: ./certs/ca.crt
+  # keyFile: ./certs/ca.key

@@ -1,6 +1,6 @@
 # vite-plugin-auto-cert
- 
-Generate a temporary certificate from trusted ca, and start a vite dev server with https enable.
+
+Generate a temporary certificate signed by your trusted CA, and start a Vite dev server with HTTPS enabled.
 
 ## The reasons you may need this plugin
 
@@ -18,7 +18,48 @@ This plugin will rewrite the `server.https` section in your vite config, and for
 
 ## Usage
 
-Insert example below into your vite config's plugin section.
+### Option A (recommended): a project config file
+
+Create `auto-cert.config.yaml` in your **project root** (the `root` passed to Vite; falls back to
+`process.cwd()`). If `auto-cert.config.yaml` is not found, the plugin also tries
+`auto-cert.config.yml`.
+
+```yaml
+enabled: true # optional, defaults to true; set false to disable the plugin (no-op)
+ca:
+  # inline PEM (both cert and key are required)
+  cert: |
+    -----BEGIN CERTIFICATE-----
+    ...
+    -----END CERTIFICATE-----
+  key: |
+    -----BEGIN PRIVATE KEY-----
+    ...
+    -----END PRIVATE KEY-----
+  # or file paths, resolved relative to the directory of this config file:
+  # certFile: ./certs/ca.crt
+  # keyFile: ./certs/ca.key
+```
+
+See [`auto-cert.config.example.yaml`](./auto-cert.config.example.yaml) for a safe, secret-free example.
+
+Then add the plugin to your vite config (no CA secrets in `vite.config.ts`):
+
+```typescript
+import autoCert from "vite-plugin-auto-cert";
+
+export default defineConfig({
+  plugins: [autoCert()],
+});
+```
+
+You can override the config file name or path with the `configFile` option (relative to `root`):
+
+```typescript
+autoCert({ configFile: "config/auto-cert.yaml" });
+```
+
+### Option B (legacy): inline CA in your vite config
 
 ```typescript
 autoCert({
@@ -27,4 +68,35 @@ autoCert({
     key: "<provide your ca's private key>",
   },
 });
+```
+
+This still works and takes the highest priority, but keeping the CA private key in `vite.config.ts`
+is discouraged — prefer the project config file instead.
+
+## Behavior details
+
+- **Config file not found → no-op.** The plugin returns `undefined` from the `config` hook and does
+  not touch `server.https`; Vite starts with its original configuration. A single
+  `[auto-cert] ... 未找到 ...，插件未启用` info line is printed.
+- **Config file found → generate a certificate from it and set `server.https`.**
+- **Priority:** explicit `autoCert({ ca })` > project config file > no-op.
+- **`enabled: false` in the config file** is treated as a no-op (no error).
+- **Invalid config file** (YAML parse error, missing `ca`, incomplete `cert`/`key`, or a referenced
+  cert/key file that does not exist) throws an error that includes the file path, so Vite fails to
+  start instead of silently falling back.
+
+## Security: keep your CA private key out of git
+
+Add the config file and the referenced certificate directory to `.gitignore`, and restrict the CA
+private key permissions:
+
+```gitignore
+# .gitignore
+auto-cert.config.yaml
+auto-cert.config.yml
+certs/
+```
+
+```bash
+chmod 600 certs/ca.key
 ```
